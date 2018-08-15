@@ -48,9 +48,9 @@ class DataHolder:
         result = []
         for p in self.iterall():
             if self.api.response_data_name is not None:
-                result.append(p[self.api.response_data_name])
+                result += p[self.api.response_data_name]
             else:
-                result.append(p)
+                result += p
         if self.api.response_data_name is None:
             if len(result) == 1:
                 return result[0]
@@ -83,6 +83,8 @@ class DataHolder:
         return self._get_response(self._build_request_params())
 
     def find(self, pk):
+        if self.api.after_find_attributes is not None:
+            self.api.data_attributes += self.api.after_find_attributes
         self.page_no = 1
         self.pk = pk
         return self
@@ -97,11 +99,12 @@ class BlackCurveAPI:
         self.domain = 'https://%s.pricingsuccess.uk/api/' % subdomain
         self.access_token = access_token
         self.current_request = None
-        self.data_attributes = ['all','iterall', 'page', 'find']
+        self.data_attributes = ['all', 'iterall', 'page', 'find']
         self.response_data_name = 'data'
         self.endpoint = None
         self.params = {}
         self.method = None
+        self.after_find_attributes = None
 
     def __getattr__(self, name):
         dh = DataHolder(self)
@@ -135,6 +138,7 @@ class BlackCurveAPI:
         response = json.loads(response.text)
         if 'token' in response.keys():
             self.access_token = response['token']
+            return self.access_token
         else:
             raise Exception('Bad Response getting Access Token %s' % response['error'])
 
@@ -177,7 +181,8 @@ class BlackCurveAPI:
         Gets a list of data from a given data source.
         :return: Data from a given / all data sources
         """
-        self.data_attributes = ['all', 'iterall', 'page', 'find']
+        self.data_attributes = ['find']
+        self.after_find_attributes = ['all', 'iterall', 'page']
         self.response_data_name = 'data'
         endpoint = 'data_sources/'
         params = {}
