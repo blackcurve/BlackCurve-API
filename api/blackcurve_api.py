@@ -28,6 +28,11 @@ class DataHolder:
         else:
             if self.api.params is not None:
                 self.api.params.pop('page', None)
+                # change lists to comma delimited strings
+                for k, v in self.api.params.items():
+                    if isinstance(v, list):
+                        self.api.params[k] = ','.join(v)
+
         # get the get params
         if self.api.params:
             url += '?' + urllib.urlencode(self.api.params)
@@ -80,7 +85,7 @@ class DataHolder:
     def find(self, pk):
         self.page_no = 1
         self.pk = pk
-        return self._get_response(self._build_request_params())
+        return self
 
 
 class BlackCurveAPI:
