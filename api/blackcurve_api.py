@@ -8,6 +8,7 @@ class DataHolder:
         self.api = api
         self.request = self.api.current_request
         self.page_no = 1
+        self.max_page = None
         self.pk = None
 
     @staticmethod
@@ -63,12 +64,15 @@ class DataHolder:
         :return: iterator for result pages
         """
         # reset page number
-        self.page_no = 1
+        if self.max_page is None:
+            self.page_no = 1
         last_page = False
         while not last_page:
             resp = self._get_response(self._build_request_params())
             if 'no_pages' in resp.keys():
                 pages = resp['no_pages']
+                if self.max_page is not None:
+                    pages = self.max_page
                 if self.page_no == pages:
                     last_page = True
                     self.page_no = 1
@@ -79,8 +83,21 @@ class DataHolder:
 
     def page(self, number):
         self.page_no = 1
+        self.max_page = None
         self.page_no = number
         return self._get_response(self._build_request_params())
+
+    def pages(self, start, finish):
+        """
+        :param start: page to start from
+        :param finish: page to end on
+        :return: concat data for given page range
+        """
+        if self.api.after_find_attributes is not None:
+            self.api.data_attributes += self.api.after_find_attributes
+        self.page_no = start
+        self.max_page = finish
+        return self.all()
 
     def find(self, pk):
         if self.api.after_find_attributes is not None:
@@ -97,6 +114,8 @@ class BlackCurveAPI:
 
     def __init__(self, subdomain, access_token=None):
         self.domain = 'https://%s.pricingsuccess.uk/api/' % subdomain
+        # self.domain = 'http://127.0.0.1:8000/api/'
+
         self.access_token = access_token
         self.current_request = None
         self.data_attributes = ['all', 'iterall', 'page', 'find']
@@ -189,7 +208,7 @@ class BlackCurveAPI:
         if columns is not None:
             params['columns'] = columns
         if kwargs is not None:
-            for k, v in kwargs:
+            for k, v in kwargs.items():
                 params[k] = v
 
         self._get_request(endpoint, 'GET', params)
