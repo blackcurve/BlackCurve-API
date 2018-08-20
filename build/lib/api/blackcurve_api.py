@@ -3,7 +3,7 @@ import json
 import urllib
 
 
-class DataHolder(object):
+class DataHolder:
     def __init__(self, api):
         self.api = api
         self.request = self.api.current_request
@@ -97,7 +97,7 @@ class DataHolder(object):
             self.api.data_attributes += self.api.after_find_attributes
         self.page_no = start
         self.max_page = finish
-        return self.all()
+        return self._get_response(self._build_request_params())
 
     def find(self, pk):
         if self.api.after_find_attributes is not None:
@@ -107,14 +107,13 @@ class DataHolder(object):
         return self
 
 
-class BlackCurveAPI(object):
+class BlackCurveAPI:
     """
     This is the holder for the subdomain and access_token for accessing the API
     """
 
     def __init__(self, subdomain, access_token=None):
         self.domain = 'https://%s.pricingsuccess.uk/api/' % subdomain
-        # self.domain = 'http://127.0.0.1:8000/api/'
 
         self.access_token = access_token
         self.current_request = None
@@ -169,7 +168,6 @@ class BlackCurveAPI(object):
         :return: Current Prices
         """
         self.data_attributes = ['all', 'iterall', 'page', 'find']
-        self.after_find_attributes = ['all', 'iterall', 'page']
         self.response_data_name = 'prices'
         endpoint = 'prices/'
 
