@@ -1,6 +1,7 @@
 import requests
 import json
 import urllib
+import datetime
 
 
 class DataHolder(object):
@@ -17,6 +18,16 @@ class DataHolder(object):
         self._no_pages = None
         self._data_source = None
         self._object_name = self._api.object_name
+        self._all_pages_called = False
+        self._type_map = {
+            'Text': [str, unicode],
+            'Decimal': [float],
+            'Integer': [int],
+            'Float': [float],
+            'Date': [datetime.date],
+            'Date Time': [datetime.datetime],
+            'Boolean': [True, False]
+        }
 
     @staticmethod
     def _parse_response(response):
@@ -55,9 +66,10 @@ class DataHolder(object):
     def _get_response(self, params):
         return self._parse_response(requests.request(**params).text)
 
-    def _process_request(self):
+    def _process_request(self, new_instance=False):
         data = self._get_response(self._build_request_params())
         self._no_pages = data.pop('no_pages', None)
+        inst = DataHolder(self._api)
         if self._api.response_data_name is not None:
             data = data[self._api.response_data_name]
         if isinstance(data, list):
@@ -68,7 +80,11 @@ class DataHolder(object):
                 for key, val in i.items():
                     d_obj._query[key] = val
                     self._set_class_attribute(d_obj, key, val)
-                self._queryset.append(d_obj)
+                if new_instance:
+                    inst._queryset.append(d_obj)
+                else:
+                    self._queryset.append(d_obj)
+
         elif isinstance(data, dict):
             for k, v in data.items():
                 d_obj = DataHolder(self._api)
@@ -78,8 +94,12 @@ class DataHolder(object):
                 for key, val in v.items():
                     d_obj._query[key] = val
                     self._set_class_attribute(d_obj, key, val)
-                self._queryset.append(d_obj)
-
+                if new_instance:
+                    inst._queryset.append(d_obj)
+                else:
+                    self._queryset.append(d_obj)
+        if new_instance:
+            return inst
         if len(self._queryset) == 1:
             return self._queryset[0]
         return self
@@ -88,17 +108,8 @@ class DataHolder(object):
         """
         :return: all of the data (all pages)
         """
-        result = []
-        for p in self._iter_pages():
-            if self._api.response_data_name is not None:
-                result += p[self._api.response_data_name]
-            else:
-                result += p
-        if self._api.response_data_name is None:
-            if len(result) == 1:
-                return result[0]
-            return result
-        return {self._api.response_data_name: result}
+        self._all_pages_called = True
+        return self
 
     def page(self, number):
         self._page_no = 1
@@ -149,7 +160,8 @@ class DataHolder(object):
             self.create(**i)
 
     def save(self, create=False):
-        self._set_changed_attributes()
+        if not create:
+            self._set_changed_attributes()
         if self._update_query:
             params = self._build_request_params('POST', json.dumps(self._update_query))
             resp = self._get_response(params)
@@ -158,6 +170,7 @@ class DataHolder(object):
     def _set_changed_attributes(self):
         class_attrs = {x: getattr(self, x, None) for x in dir(self) if not x.startswith('_')}
         class_attrs = {k: v for k, v in class_attrs.items() if not callable(v)}
+        class_attrs ={k: v for k, v in class_attrs.items() if v is not None}
         cased_class_attrs = {self._attribute_map[k] if k in self._attribute_map.keys() else k: v for k, v in class_attrs.items()}
         for k, v in self._query.items():
             if k in cased_class_attrs.keys():
@@ -186,31 +199,41 @@ class DataHolder(object):
         Generator function for all the pages
         :return: iterator for result pages
         """
-        self._queryset = []
+        if not self._all_pages_called:
+            self._queryset = []
         # reset page number
         if self._max_page is None:
             self._page_no = 1
         last_page = False
         while not last_page:
-            obj = self._process_request()
+            obj = self._process_request(True)
+            if self._all_pages_called:
+                self._queryset += obj._queryset
             if self._no_pages is not None:
                 if self._max_page is not None:
                     self._no_pages = self._max_page
                 if self._page_no == self._no_pages:
                     last_page = True
+                    self._all_pages_called = False
                     self._page_no = 1
                 self._page_no += 1
             else:
                 last_page = True
+                self._all_pages_called = False
             yield obj
 
     def __iter__(self):
-        if len(self._queryset) > 1:
-            for i in self._queryset:
-                yield i
+        if self._all_pages_called:
+            for p in self._iter_pages():
+               for i in p._queryset:
+                   yield i
         else:
-            for k, v in self._query.items():
-                yield k, v
+            if len(self._queryset) > 1:
+                for i in self._queryset:
+                    yield i
+            else:
+                for k, v in self._query.items():
+                    yield k, v
 
     def __getattr__(self, item):
         if callable(self.__getattribute__(item)):
@@ -219,9 +242,23 @@ class DataHolder(object):
         return self.__getattribute__(item)
 
     def __getitem__(self, item):
-        object_names = [x._object_name for x in self._queryset]
-        idx = object_names.index(item)
-        return self._queryset[idx]
+        if isinstance(item, int):
+            if self._queryset:
+                return self._queryset[item]
+            else:
+                if self._all_pages_called:
+                    return list(self)[0]
+                raise ValueError
+        else:
+            object_names = [x._object_name for x in self._queryset]
+            try:
+                idx = object_names.index(item)
+            except ValueError:
+                try:
+                    return self._query[item]
+                except ValueError:
+                    return self._queryset[item]
+            return self._queryset[idx]
 
     def __setitem__(self, key, value):
         if hasattr(self, key):
@@ -237,19 +274,39 @@ class DataHolder(object):
         return '<%s Object>' % self._object_name
 
     def __len__(self):
+        if self._query:
+            return len(self._query)
         return len(self._queryset)
 
     def __str__(self):
-        if len(self._queryset):
-            return self.__repr__()
-        else:
+        if self._query:
             return str(self._query)
+        else:
+            return self.__repr__()
 
     def __delattr__(self, item):
         return self.delete(item)
 
     def __delitem__(self, key):
         return self.delete(key)
+
+    @property
+    def __class__(self):
+        for _ in self:
+            pass
+        if self._query:
+            return dict
+        else:
+            return list
+
+    def keys(self):
+        return self._query.keys()
+
+    def values(self):
+        return self._query.values()
+
+    def items(self):
+        return self._query.items()
 
 
 class BlackCurveAPI(object):
@@ -258,12 +315,12 @@ class BlackCurveAPI(object):
     """
 
     def __init__(self, subdomain, access_token=None):
-        # self.domain = 'https://%s.blackcurve.io/api/' % subdomain
-        self.domain = 'http://127.0.0.1:8000/api/'
-        self.object_name = 'BlackCurve API Object'
+        self.domain = 'https://%s.blackcurve.io/api/' % subdomain
+        # self.domain = 'http://127.0.0.1:8000/api/'
+        self.object_name = 'BlackCurve API'
         self.access_token = access_token
         self.current_request = None
-        self.data_attributes = ['all', 'iterall', 'page', 'find']
+        self.data_attributes = ['all', 'iterall', 'page', 'find', 'pages']
         self.response_data_name = 'data'
         self.endpoint = None
         self.params = {}
@@ -318,8 +375,8 @@ class BlackCurveAPI(object):
         :return: Current Prices
         """
         self.object_name = 'Price'
-        self.data_attributes = ['all', 'iterall', 'page', 'find']
-        self.after_find_attributes = ['all', 'iterall', 'page']
+        self.data_attributes = ['all', 'iterall', 'page', 'find', 'pages']
+        self.after_find_attributes = ['all', 'iterall']
         self.response_data_name = 'prices'
         self._is_updatable = False
         endpoint = 'prices/'
@@ -350,16 +407,15 @@ class BlackCurveAPI(object):
         self._is_updatable = False
         return self
 
-    def data_sources(self, columns=None, **kwargs):
+    def data_sources(self, source_name, columns=None, **kwargs):
         """
         Gets a list of data from a given data source.
         :return: Data from a given / all data sources
         """
         self.object_name = 'Data Sources'
-        self.data_attributes = ['find']
-        self.after_find_attributes = ['all', 'iterall', 'page', 'create', 'batch_create']
+        self.data_attributes = ['all', 'iterall', 'page', 'create', 'batch_create']
         self.response_data_name = 'data'
-        endpoint = 'data_sources/'
+        endpoint = 'data_sources/%s' % source_name
         params = {}
         if columns is not None:
             params['columns'] = columns
