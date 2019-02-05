@@ -1,7 +1,6 @@
 import requests
 import json
 import urllib
-import datetime
 
 
 class DataHolder(object):
@@ -19,15 +18,6 @@ class DataHolder(object):
         self._data_source = None
         self._object_name = self._api.object_name
         self._all_pages_called = False
-        self._type_map = {
-            'Text': [str, unicode],
-            'Decimal': [float],
-            'Integer': [int],
-            'Float': [float],
-            'Date': [datetime.date],
-            'Date Time': [datetime.datetime],
-            'Boolean': [True, False]
-        }
 
     @staticmethod
     def _parse_response(response):
@@ -150,8 +140,21 @@ class DataHolder(object):
         resp = self._get_response(params)
         return self
 
-    def create(self, **kwargs):
-        data = kwargs
+    def create(self, *args, **kwargs):
+        if args:
+            if isinstance(args, tuple) or isinstance(args, list):
+                if len(args) > 1:
+                    raise TypeError('Too many rows, use bulk_create() to add multiple rows at once')
+                args = args[0]
+            if not isinstance(args, dict):
+                raise TypeError('arguments must be a dictionary')
+            data = args
+        else:
+            if not kwargs:
+                raise TypeError('create() takes at least one argument')
+            data = kwargs
+        if not data:
+            raise TypeError('create() takes at least one argument')
         self._update_query = data
         self.save(True)
 
@@ -206,7 +209,10 @@ class DataHolder(object):
             self._page_no = 1
         last_page = False
         while not last_page:
-            obj = self._process_request(True)
+            try:
+                obj = self._process_request(True)
+            except Exception as e:
+                raise StopIteration(*e.args)
             if self._all_pages_called:
                 self._queryset += obj._queryset
             if self._no_pages is not None:
@@ -225,8 +231,8 @@ class DataHolder(object):
     def __iter__(self):
         if self._all_pages_called:
             for p in self._iter_pages():
-               for i in p._queryset:
-                   yield i
+                for i in p._queryset:
+                    yield i
         else:
             if len(self._queryset) > 1:
                 for i in self._queryset:
@@ -315,8 +321,8 @@ class BlackCurveAPI(object):
     """
 
     def __init__(self, subdomain, access_token=None):
-        self.domain = 'https://%s.blackcurve.io/api/' % subdomain
-        # self.domain = 'http://127.0.0.1:8000/api/'
+        # self.domain = 'https://%s.blackcurve.io/api/' % subdomain
+        self.domain = 'http://127.0.0.1:8000/api/'
         self.object_name = 'BlackCurve API'
         self.access_token = access_token
         self.current_request = None
@@ -413,7 +419,7 @@ class BlackCurveAPI(object):
         :return: Data from a given / all data sources
         """
         self.object_name = 'Data Sources'
-        self.data_attributes = ['all', 'iterall', 'page', 'create', 'batch_create']
+        self.data_attributes = ['all', 'iterall', 'page', 'create', 'batch_create', 'pages']
         self.response_data_name = 'data'
         endpoint = 'data_sources/%s' % source_name
         params = {}
