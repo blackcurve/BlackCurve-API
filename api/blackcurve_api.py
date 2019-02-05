@@ -5,6 +5,10 @@ import urllib
 
 class DataHolder(object):
     def __init__(self, api):
+        """
+        Object for holding, CRUD BlackCurve data objects
+        :param api: API Credentials object (BlackCurveAPI)
+        """
         self._api = api
         self._request = self._api.current_request
         self._page_no = 1
@@ -96,6 +100,7 @@ class DataHolder(object):
 
     def all(self):
         """
+        Get all of the entries
         :return: all of the data (all pages)
         """
         self._all_pages_called = True
@@ -128,6 +133,11 @@ class DataHolder(object):
         return self._process_request()
 
     def delete(self, attribute=None):
+        """
+        Deletes a Data Object
+        :param attribute: Optional: for deleting a single value
+        :return: self
+        """
         if attribute:
             try:
                 item = getattr(self, attribute)
@@ -141,6 +151,12 @@ class DataHolder(object):
         return self
 
     def create(self, *args, **kwargs):
+        """
+        Create a new data object
+        :param args: Object data
+        :param kwargs: Object data
+        :return: self
+        """
         if args:
             if isinstance(args, tuple) or isinstance(args, list):
                 if len(args) > 1:
@@ -156,19 +172,30 @@ class DataHolder(object):
         if not data:
             raise TypeError('create() takes at least one argument')
         self._update_query = data
-        self.save(True)
+        return self.save(True)
 
     def batch_create(self, object_list):
+        """
+        Create multiple data objects at once
+        :param object_list: list of objects to be created
+        :return: self
+        """
         for i in object_list:
             self.create(**i)
+        return self
 
     def save(self, create=False):
+        """
+        Save data objects
+        :param create: Whether or not to create a new entry or update an existing one
+        :return: self
+        """
         if not create:
             self._set_changed_attributes()
         if self._update_query:
             params = self._build_request_params('POST', json.dumps(self._update_query))
             resp = self._get_response(params)
-            return self
+        return self
 
     def _set_changed_attributes(self):
         class_attrs = {x: getattr(self, x, None) for x in dir(self) if not x.startswith('_')}
@@ -316,13 +343,14 @@ class DataHolder(object):
 
 
 class BlackCurveAPI(object):
-    """
-    This is the holder for the subdomain and access_token for accessing the API
-    """
-
     def __init__(self, subdomain, access_token=None):
-        # self.domain = 'https://%s.blackcurve.io/api/' % subdomain
-        self.domain = 'http://127.0.0.1:8000/api/'
+        """
+        This is the base class for accessing the API either by obtaining an access token by providing a key and secret
+        or by just providing a pre-existing token
+        :param subdomain: Your BlackCurve subdomain (name of company usually)
+        :param access_token: Optional: API access token obtained
+        """
+        self.domain = 'https://%s.blackcurve.io/api/' % subdomain
         self.object_name = 'BlackCurve API'
         self.access_token = access_token
         self.current_request = None
@@ -416,6 +444,8 @@ class BlackCurveAPI(object):
     def data_sources(self, source_name, columns=None, **kwargs):
         """
         Gets a list of data from a given data source.
+        :param source_name: DataSource name, e.g. 'SalesHistory'
+        :param columns: Optional: The required columns from the DataSource
         :return: Data from a given / all data sources
         """
         self.object_name = 'Data Sources'
