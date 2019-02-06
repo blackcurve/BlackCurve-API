@@ -6,7 +6,7 @@ import urllib
 class DataHolder(object):
     def __init__(self, api):
         """
-        Object for holding, CRUD BlackCurve data objects
+        Object for holding & CRUD operations on BlackCurve data objects
         :param api: API Credentials object (BlackCurveAPI)
         """
         self._api = api
@@ -25,12 +25,23 @@ class DataHolder(object):
 
     @staticmethod
     def _parse_response(response):
+        """
+        decode the response and check for errors
+        :param response: http response
+        :return: decoded response
+        """
         resp = json.loads(response)
         if 'error' in resp.keys():
             raise Exception(resp['error'])
         return resp
 
     def _build_request_params(self, method=None, data=None):
+        """
+        Build the request params
+        :param method: http method
+        :param data: any post data
+        :return: dict of the params to make the request
+        """
         if method is None:
             method = self._api.method
         url = self._api.domain + self._api.endpoint
@@ -58,9 +69,19 @@ class DataHolder(object):
         return {'method': method, 'url': url, 'headers': self._api.headers}
 
     def _get_response(self, params):
+        """
+        Make the request
+        :param params: http parameters
+        :return: response
+        """
         return self._parse_response(requests.request(**params).text)
 
     def _process_request(self, new_instance=False):
+        """
+        Update this object with the data
+        :param new_instance: If we need a new instance or not
+        :return: self
+        """
         data = self._get_response(self._build_request_params())
         self._no_pages = data.pop('no_pages', None)
         inst = DataHolder(self._api)
@@ -103,10 +124,15 @@ class DataHolder(object):
         Get all of the entries
         :return: all of the data (all pages)
         """
-        self._all_pages_called = True
+        self._all_pages_called = 5
         return self
 
     def page(self, number):
+        """
+        Get a single page of data
+        :param number: page number
+        :return: data
+        """
         self._page_no = 1
         self._max_page = None
         self._page_no = number
@@ -114,6 +140,7 @@ class DataHolder(object):
 
     def pages(self, start, finish):
         """
+        Get a range of pages of data
         :param start: page to start from
         :param finish: page to end on
         :return: concat data for given page range
@@ -125,6 +152,11 @@ class DataHolder(object):
         return self.all()
 
     def find(self, pk):
+        """
+        Find a single object
+        :param pk: ID for the obkect
+        :return: object
+        """
         self._queryset = []
         if self._api.after_find_attributes is not None:
             self._api.data_attributes += self._api.after_find_attributes
@@ -198,6 +230,9 @@ class DataHolder(object):
         return self
 
     def _set_changed_attributes(self):
+        """
+        Find all of the objects attributes that have changes (for updates)
+        """
         class_attrs = {x: getattr(self, x, None) for x in dir(self) if not x.startswith('_')}
         class_attrs = {k: v for k, v in class_attrs.items() if not callable(v)}
         class_attrs ={k: v for k, v in class_attrs.items() if v is not None}
@@ -209,6 +244,10 @@ class DataHolder(object):
         self._update_query = cased_class_attrs
 
     def _get_deleted_attributes(self):
+        """
+        Get the attributes that have been deleted
+        :return: deleted attributes (dict)
+        """
         class_attrs = {x: getattr(self, x, None) for x in dir(self) if not x.startswith('_')}
         class_attrs = {k: v for k, v in class_attrs.items() if not callable(v)}
         return {k: v for k, v in self._query.items() if k not in class_attrs.keys()}
@@ -307,6 +346,7 @@ class DataHolder(object):
         return '<%s Object>' % self._object_name
 
     def __len__(self):
+        self.__iter__()
         if self._query:
             return len(self._query)
         return len(self._queryset)
@@ -372,7 +412,7 @@ class BlackCurveAPI(object):
         else:
             raise Exception('method \'%s\' not allowed' % name)
 
-    def _get_request(self, endpoint, method, params=None):
+    def _set_request_attributes(self, endpoint, method, params=None):
         self.endpoint = endpoint
         self.params = params
         self.method = method
@@ -401,11 +441,12 @@ class BlackCurveAPI(object):
         else:
             raise Exception('Bad Response getting Access Token %s' % response['error'])
 
-    def prices(self, columns=None, geography=None, **kwargs):
+    def prices(self, columns=None, geography=None, changes_only=True, **kwargs):
         """
         :param columns: Optional: list of columns you want back
         :param geography: Optional: list of geographies you want back
-        :param kwargs: Optional: filter columns eg brand=['nike', 'addidas']
+        :param changes_only: Optional: whether or not to only recieve prices that have changed
+        :param kwargs: Optional: filter columns eg. brand=['nike', 'addidas']
         :return: Current Prices
         """
         self.object_name = 'Price'
@@ -420,11 +461,13 @@ class BlackCurveAPI(object):
             params['columns'] = columns
         if geography is not None:
             params['geography'] = geography
+        if not changes_only:
+            params['changes_only'] = changes_only
         if kwargs is not None:
             for k, v in kwargs:
                 params[k] = v
 
-        self._get_request(endpoint, 'GET', params)
+        self._set_request_attributes(endpoint, 'GET', params)
         return self
 
     def data_sources_info(self):
@@ -436,7 +479,7 @@ class BlackCurveAPI(object):
         self.data_attributes = ['all', 'find', 'delete', 'save']
         self.response_data_name = None
         endpoint = 'data_sources_info/'
-        self._get_request(endpoint, 'GET')
+        self._set_request_attributes(endpoint, 'GET')
         self._can_only_change_attributes = True
         self._is_updatable = False
         return self
@@ -459,8 +502,6 @@ class BlackCurveAPI(object):
             for k, v in kwargs.items():
                 params[k] = v
 
-        self._get_request(endpoint, 'GET', params)
+        self._set_request_attributes(endpoint, 'GET', params)
         return self
-
-
 

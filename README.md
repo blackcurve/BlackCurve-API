@@ -9,7 +9,7 @@ Documentation for the BlackCurve endpoints can be found [Here](blackcurve.io/api
 * [requests](http://docs.python-requests.org/en/master/) (>v2.0) HTTP library for python.  
   
 ## Installation
-> `$ pip install requests`
+> `$ pip install requests`  
 > `$ pip install blackcurve_api`
 
 ## Basic Usage
