@@ -1,12 +1,13 @@
 
-# BlackCurve Python API Library
-  
+# BlackCurve Python API Library 
+<img alt='BlackCurve' src="https://blackcurve.io/api/docs/_images/blackcurve-logo.png" width="250">
+---
 ## API Documentation  
-Documentation for the BlackCurve endpoints can be found [Here](blackcurve.io/api/docs/index.html).  
+Documentation for the BlackCurve endpoints can be found [here](blackcurve.io/api/docs/index.html).  
   
 ## Requirements  
-* Python 2/3  
-* [requests](http://docs.python-requests.org/en/master/) (>v2.0) HTTP library for python.  
+* Python 2.7+
+* [Requests](http://docs.python-requests.org/en/master/) HTTP library for python v2.0 or above.  
   
 ## Installation
 > `$ pip install requests`  

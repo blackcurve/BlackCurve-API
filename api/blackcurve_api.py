@@ -1,6 +1,26 @@
 import requests
 import json
-import urllib
+import sys
+import collections
+
+# Python 2 & 3 compatible url-encoding
+if sys.version_info >= (3, 0):
+    from urllib.parse import urlencode
+else:
+    from urllib import urlencode
+
+
+def data_func_dec(func):
+    """
+    A decorator for the data functions in the DataHolder class
+    :param func: method
+    :return: method
+    """
+    def wrapper(self, *args, **kwargs):
+        """ Log the function call """
+        self._data_function_called_dict[func.__name__] = True
+        return func(self, *args, **kwargs)
+    return wrapper
 
 
 class DataHolder(object):
@@ -11,17 +31,31 @@ class DataHolder(object):
         """
         self._api = api
         self._request = self._api.current_request
+
+        # has a data function been evaluated?
+        self._data_function_evaluated_dict = dict(all=False, page=False, pages=False, find=False, delete=False,
+                                                  save=False, create=False, batch_create=False)
+        self._data_function_called_dict = dict(all=False, page=False, pages=False, find=False, delete=False, save=False,
+                                               create=False, batch_create=False)
+
+        # page info (multi & single page object)
         self._page_no = 1
         self._max_page = None
-        self._pk = None
-        self._queryset = []
-        self._query = {}
-        self._update_query = {}
-        self._attribute_map = {}
         self._no_pages = None
+
+        # id / pk of the item (single item object)
+        self._pk = None
+
+        # object data storage
+        self._pages_queryset = list()
+        self._query = dict()
+
+        # data attribute changes storage
+        self._update_query = dict()
+        self._attribute_map = dict()
+
         self._data_source = None
         self._object_name = self._api.object_name
-        self._all_pages_called = False
 
     @staticmethod
     def _parse_response(response):
@@ -61,7 +95,7 @@ class DataHolder(object):
 
         # get the get params
         if self._api.params:
-            url += '?' + urllib.urlencode(self._api.params)
+            url += '?' + urlencode(self._api.params)
         if self._data_source is not None:
             url += self._data_source
         if data is not None:
@@ -87,6 +121,7 @@ class DataHolder(object):
         inst = DataHolder(self._api)
         if self._api.response_data_name is not None:
             data = data[self._api.response_data_name]
+
         if isinstance(data, list):
             for i in data:
                 d_obj = DataHolder(self._api)
@@ -96,10 +131,9 @@ class DataHolder(object):
                     d_obj._query[key] = val
                     self._set_class_attribute(d_obj, key, val)
                 if new_instance:
-                    inst._queryset.append(d_obj)
+                    inst._pages_queryset.append(d_obj)
                 else:
-                    self._queryset.append(d_obj)
-
+                    self._pages_queryset.append(d_obj)
         elif isinstance(data, dict):
             for k, v in data.items():
                 d_obj = DataHolder(self._api)
@@ -110,23 +144,24 @@ class DataHolder(object):
                     d_obj._query[key] = val
                     self._set_class_attribute(d_obj, key, val)
                 if new_instance:
-                    inst._queryset.append(d_obj)
+                    inst._pages_queryset.append(d_obj)
                 else:
-                    self._queryset.append(d_obj)
+                    self._pages_queryset.append(d_obj)
         if new_instance:
             return inst
-        if len(self._queryset) == 1:
-            return self._queryset[0]
+        if len(self._pages_queryset) == 1:
+            return self._pages_queryset[0]
         return self
 
+    @data_func_dec
     def all(self):
         """
         Get all of the entries
         :return: all of the data (all pages)
         """
-        self._all_pages_called = 5
         return self
 
+    @data_func_dec
     def page(self, number):
         """
         Get a single page of data
@@ -136,8 +171,11 @@ class DataHolder(object):
         self._page_no = 1
         self._max_page = None
         self._page_no = number
+        if self._data_function_called_dict['all'] and not self._data_function_evaluated_dict['all']:
+            return self._pages_queryset[0]
         return self._process_request()
 
+    @data_func_dec
     def pages(self, start, finish):
         """
         Get a range of pages of data
@@ -151,19 +189,21 @@ class DataHolder(object):
         self._max_page = finish
         return self.all()
 
+    @data_func_dec
     def find(self, pk):
         """
         Find a single object
         :param pk: ID for the obkect
         :return: object
         """
-        self._queryset = []
+        self._pages_queryset = []
         if self._api.after_find_attributes is not None:
             self._api.data_attributes += self._api.after_find_attributes
         self._page_no = 1
         self._pk = pk
         return self._process_request()
 
+    @data_func_dec
     def delete(self, attribute=None):
         """
         Deletes a Data Object
@@ -179,9 +219,10 @@ class DataHolder(object):
         else:
             data = self._get_deleted_attributes()
         params = self._build_request_params('DELETE', json.dumps(data))
-        resp = self._get_response(params)
+        self._get_response(params)
         return self
 
+    @data_func_dec
     def create(self, *args, **kwargs):
         """
         Create a new data object
@@ -206,6 +247,7 @@ class DataHolder(object):
         self._update_query = data
         return self.save(True)
 
+    @data_func_dec
     def batch_create(self, object_list):
         """
         Create multiple data objects at once
@@ -216,6 +258,7 @@ class DataHolder(object):
             self.create(**i)
         return self
 
+    @data_func_dec
     def save(self, create=False):
         """
         Save data objects
@@ -235,8 +278,9 @@ class DataHolder(object):
         """
         class_attrs = {x: getattr(self, x, None) for x in dir(self) if not x.startswith('_')}
         class_attrs = {k: v for k, v in class_attrs.items() if not callable(v)}
-        class_attrs ={k: v for k, v in class_attrs.items() if v is not None}
-        cased_class_attrs = {self._attribute_map[k] if k in self._attribute_map.keys() else k: v for k, v in class_attrs.items()}
+        class_attrs = {k: v for k, v in class_attrs.items() if v is not None}
+        cased_class_attrs = {self._attribute_map[k] if k in self._attribute_map.keys() else k: v for k, v in
+                             class_attrs.items()}
         for k, v in self._query.items():
             if k in cased_class_attrs.keys():
                 if cased_class_attrs[k] == v:
@@ -263,74 +307,106 @@ class DataHolder(object):
         setattr(cls, k, value)
         cls._attribute_map[k] = key
 
+    @property
+    def _data_function_called(self):
+        """
+        Has a data function been called?
+        :return: Boolean
+        """
+        if True in self._data_function_called_dict.values():
+            return True
+        return False
+
+    @property
+    def _data_function_evaluated(self):
+        """
+        Has a data function been evaluated?
+        :return: Boolean
+        """
+        if True in self._data_function_evaluated_dict.values():
+            return True
+        return False
+
+    def _set_evaluated_function(self):
+        """
+        Log the evaluation of a data function
+        :return: Nothing
+        """
+        for k, v in self._data_function_called_dict.items():
+            if v:
+                self._data_function_evaluated_dict[k] = True
+
     def _iter_pages(self):
         """
-        Generator function for all the pages
-        :return: iterator for result pages
+        Generator function for evaluating the requests and updating the object
+        :return: iterator for results pages
         """
-        if not self._all_pages_called:
-            self._queryset = []
+        if not self._data_function_evaluated_dict['all']:
+            self._pages_queryset = []
         # reset page number
         if self._max_page is None:
             self._page_no = 1
         last_page = False
         while not last_page:
+
             try:
                 obj = self._process_request(True)
             except Exception as e:
                 raise StopIteration(*e.args)
-            if self._all_pages_called:
-                self._queryset += obj._queryset
+            if self._data_function_called_dict['all'] or self._data_function_called_dict['pages']:
+                self._pages_queryset += obj._pages_queryset
             if self._no_pages is not None:
                 if self._max_page is not None:
                     self._no_pages = self._max_page
                 if self._page_no == self._no_pages:
                     last_page = True
-                    self._all_pages_called = False
+                    self._set_evaluated_function()
                     self._page_no = 1
                 self._page_no += 1
             else:
                 last_page = True
-                self._all_pages_called = False
+                self._set_evaluated_function()
             yield obj
 
     def __iter__(self):
-        if self._all_pages_called:
+        if not self._data_function_evaluated:
             for p in self._iter_pages():
-                for i in p._queryset:
+                for i in p._pages_queryset:
                     yield i
         else:
-            if len(self._queryset) > 1:
-                for i in self._queryset:
+            if len(self._pages_queryset) > 1:
+                for i in self._pages_queryset:
                     yield i
             else:
                 for k, v in self._query.items():
                     yield k, v
 
-    def __getattr__(self, item):
-        if callable(self.__getattribute__(item)):
+    def __getattribute__(self, item):
+        if callable(object.__getattribute__(self, item)) and '_' not in item:
             if item not in self._api.data_attributes:
                 raise AttributeError('%s method not allowed' % item)
-        return self.__getattribute__(item)
+            if item in self._api.data_attributes and True in self._data_function_called_dict.values():
+                raise AttributeError('%s method not allowed' % item)
+        return object.__getattribute__(self, item)
 
     def __getitem__(self, item):
         if isinstance(item, int):
-            if self._queryset:
-                return self._queryset[item]
+            if self._pages_queryset:
+                return self._pages_queryset[item]
             else:
-                if self._all_pages_called:
+                if self._data_function_evaluated_dict['all']:
                     return list(self)[0]
                 raise ValueError
         else:
-            object_names = [x._object_name for x in self._queryset]
+            object_names = [x._object_name for x in self._pages_queryset]
             try:
                 idx = object_names.index(item)
             except ValueError:
                 try:
                     return self._query[item]
                 except ValueError:
-                    return self._queryset[item]
-            return self._queryset[idx]
+                    return self._pages_queryset[item]
+            return self._pages_queryset[idx]
 
     def __setitem__(self, key, value):
         if hasattr(self, key):
@@ -341,15 +417,16 @@ class DataHolder(object):
             setattr(self, key, value)
 
     def __repr__(self):
-        if len(self._queryset) > 1:
-            return '<%s Object: len %s' % (self._api.object_name, len(self._queryset))
+        if len(self._pages_queryset) > 1:
+            return '<%s Object: len %s' % (self._api.object_name, len(self._pages_queryset))
         return '<%s Object>' % self._object_name
 
     def __len__(self):
-        self.__iter__()
+        # evaluate the generator
+        collections.deque(self.__iter__(), maxlen=0)
         if self._query:
             return len(self._query)
-        return len(self._queryset)
+        return len(self._pages_queryset)
 
     def __str__(self):
         if self._query:
@@ -394,7 +471,8 @@ class BlackCurveAPI(object):
         self.object_name = 'BlackCurve API'
         self.access_token = access_token
         self.current_request = None
-        self.data_attributes = ['all', 'iterall', 'page', 'find', 'pages']
+        self.all_data_attributes = ['all', 'page', 'find', 'pages']
+        self.data_attributes = self.all_data_attributes
         self.response_data_name = 'data'
         self.endpoint = None
         self.params = {}
@@ -403,14 +481,17 @@ class BlackCurveAPI(object):
         self._data_holder = DataHolder(self)
         self._can_only_change_attributes = False
         self._is_updatable = True
+        self._endpoint_called = False
 
     def __getattr__(self, name):
         if name in self.data_attributes:
+            if not self._endpoint_called:
+                raise AttributeError('You need to call an endpoint before a data function, e.g. inst.prices().all()')
             return getattr(self._data_holder, name)
         elif name == '__deepcopy__':
             return None
         else:
-            raise Exception('method \'%s\' not allowed' % name)
+            raise AttributeError('method \'%s\' not allowed' % name)
 
     def _set_request_attributes(self, endpoint, method, params=None):
         self.endpoint = endpoint
@@ -449,11 +530,13 @@ class BlackCurveAPI(object):
         :param kwargs: Optional: filter columns eg. brand=['nike', 'addidas']
         :return: Current Prices
         """
+        self._data_holder = DataHolder(self)
         self.object_name = 'Price'
-        self.data_attributes = ['all', 'iterall', 'page', 'find', 'pages']
-        self.after_find_attributes = ['all', 'iterall']
+        self.data_attributes = ['all', 'page', 'find', 'pages']
+        self.after_find_attributes = ['all']
         self.response_data_name = 'prices'
         self._is_updatable = False
+        self._endpoint_called = True
         endpoint = 'prices/'
 
         params = {}
@@ -475,6 +558,7 @@ class BlackCurveAPI(object):
         Retrieves the column names and data types for all data sources
         :return: column names and types for each source
         """
+        self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources Info'
         self.data_attributes = ['all', 'find', 'delete', 'save']
         self.response_data_name = None
@@ -482,6 +566,7 @@ class BlackCurveAPI(object):
         self._set_request_attributes(endpoint, 'GET')
         self._can_only_change_attributes = True
         self._is_updatable = False
+        self._endpoint_called = True
         return self
 
     def data_sources(self, source_name, columns=None, **kwargs):
@@ -491,8 +576,9 @@ class BlackCurveAPI(object):
         :param columns: Optional: The required columns from the DataSource
         :return: Data from a given / all data sources
         """
+        self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources'
-        self.data_attributes = ['all', 'iterall', 'page', 'create', 'batch_create', 'pages']
+        self.data_attributes = ['all', 'page', 'create', 'batch_create', 'pages']
         self.response_data_name = 'data'
         endpoint = 'data_sources/%s' % source_name
         params = {}
@@ -503,5 +589,5 @@ class BlackCurveAPI(object):
                 params[k] = v
 
         self._set_request_attributes(endpoint, 'GET', params)
+        self._endpoint_called = True
         return self
-

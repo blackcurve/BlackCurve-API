@@ -1,9 +1,0 @@
-README.md
-setup.py
-api/__init__.py
-api/blackcurve_api.py
-api/test.py
-blackcurve_api.egg-info/PKG-INFO
-blackcurve_api.egg-info/SOURCES.txt
-blackcurve_api.egg-info/dependency_links.txt
-blackcurve_api.egg-info/top_level.txt
