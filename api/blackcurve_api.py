@@ -10,17 +10,33 @@ else:
     from urllib import urlencode
 
 
-def data_func_dec(func):
+class APIException(Exception):
+    """ Custom Exception """
+    pass
+
+
+def data_func_called_dec(evaluated=False):
     """
     A decorator for the data functions in the DataHolder class
-    :param func: method
+    :param evaluated: if the function will be immediately evaluated or not (False)
     :return: method
     """
-    def wrapper(self, *args, **kwargs):
-        """ Log the function call """
-        self._data_function_called_dict[func.__name__] = True
-        return func(self, *args, **kwargs)
-    return wrapper
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            """ Log the function call """
+            self._data_function_called_dict[func.__name__] = True
+            if evaluated:
+                output = func(self, *args, **kwargs)
+                output._data_function_evaluated_dict[func.__name__] = True
+                self._data_function_evaluated_dict[func.__name__] = True
+                for i in output._pages_queryset:
+                    i._data_function_evaluated_dict[func.__name__] = True
+                for i in self._pages_queryset:
+                    i._data_function_evaluated_dict[func.__name__] = True
+                return output
+            return func(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 
 class DataHolder(object):
@@ -66,7 +82,7 @@ class DataHolder(object):
         """
         resp = json.loads(response)
         if 'error' in resp.keys():
-            raise Exception(resp['error'])
+            raise APIException(resp['error'])
         return resp
 
     def _build_request_params(self, method=None, data=None):
@@ -81,7 +97,7 @@ class DataHolder(object):
         url = self._api.domain + self._api.endpoint
         # get the pk if there is one
         if self._pk is not None:
-            url += self._pk
+            url += '?id=' + str(self._pk)
         # get the page number
         if self._page_no > 1:
             self._api.params['page'] = self._page_no
@@ -125,6 +141,7 @@ class DataHolder(object):
         if isinstance(data, list):
             for i in data:
                 d_obj = DataHolder(self._api)
+                d_obj._api.data_attributes = self._api.data_item_attributes
                 d_obj._request = self._api.current_request
                 d_obj._object_name = self._api.object_name
                 for key, val in i.items():
@@ -138,6 +155,7 @@ class DataHolder(object):
             for k, v in data.items():
                 d_obj = DataHolder(self._api)
                 d_obj._request = self._api.current_request
+                d_obj._api.data_attributes = self._api.data_item_attributes
                 d_obj._object_name = k
                 d_obj._data_source = k
                 for key, val in v.items():
@@ -153,7 +171,7 @@ class DataHolder(object):
             return self._pages_queryset[0]
         return self
 
-    @data_func_dec
+    @data_func_called_dec()
     def all(self):
         """
         Get all of the entries
@@ -161,7 +179,7 @@ class DataHolder(object):
         """
         return self
 
-    @data_func_dec
+    @data_func_called_dec(True)
     def page(self, number):
         """
         Get a single page of data
@@ -175,7 +193,7 @@ class DataHolder(object):
             return self._pages_queryset[0]
         return self._process_request()
 
-    @data_func_dec
+    @data_func_called_dec()
     def pages(self, start, finish):
         """
         Get a range of pages of data
@@ -187,13 +205,13 @@ class DataHolder(object):
             self._api.data_attributes += self._api.after_find_attributes
         self._page_no = start
         self._max_page = finish
-        return self.all()
+        return self
 
-    @data_func_dec
+    @data_func_called_dec(True)
     def find(self, pk):
         """
         Find a single object
-        :param pk: ID for the obkect
+        :param pk: ID for the object
         :return: object
         """
         self._pages_queryset = []
@@ -203,7 +221,7 @@ class DataHolder(object):
         self._pk = pk
         return self._process_request()
 
-    @data_func_dec
+    @data_func_called_dec()
     def delete(self, attribute=None):
         """
         Deletes a Data Object
@@ -222,7 +240,7 @@ class DataHolder(object):
         self._get_response(params)
         return self
 
-    @data_func_dec
+    @data_func_called_dec()
     def create(self, *args, **kwargs):
         """
         Create a new data object
@@ -247,7 +265,7 @@ class DataHolder(object):
         self._update_query = data
         return self.save(True)
 
-    @data_func_dec
+    @data_func_called_dec()
     def batch_create(self, object_list):
         """
         Create multiple data objects at once
@@ -258,7 +276,7 @@ class DataHolder(object):
             self.create(**i)
         return self
 
-    @data_func_dec
+    @data_func_called_dec()
     def save(self, create=False):
         """
         Save data objects
@@ -268,8 +286,16 @@ class DataHolder(object):
         if not create:
             self._set_changed_attributes()
         if self._update_query:
-            params = self._build_request_params('POST', json.dumps(self._update_query))
-            resp = self._get_response(params)
+            data = self._update_query
+            try:
+                data['Product ID'] = self._query['product id']
+            except KeyError:
+                try:
+                    data['system id'] = self._query['system id']
+                except KeyError:
+                    data['id'] = self._query['id']
+            params = self._build_request_params('POST', json.dumps(data))
+            self._get_response(params)
         return self
 
     def _set_changed_attributes(self):
@@ -305,6 +331,9 @@ class DataHolder(object):
         """
         k = key.replace(' ', '_').lower().strip()
         setattr(cls, k, value)
+        if k == 'system_id':
+            setattr(cls, 'id', value)
+            cls._attribute_map['id'] = 'id'
         cls._attribute_map[k] = key
 
     @property
@@ -325,6 +354,19 @@ class DataHolder(object):
         """
         if True in self._data_function_evaluated_dict.values():
             return True
+        return False
+
+    @property
+    def needs_evaluating(self):
+        """
+        Does the object need evaluating (API request)
+        :return: Boolean
+        """
+        if not self._data_function_evaluated:
+            return True
+        if not self._query:
+            if not self._pages_queryset:
+                return True
         return False
 
     def _set_evaluated_function(self):
@@ -348,7 +390,6 @@ class DataHolder(object):
             self._page_no = 1
         last_page = False
         while not last_page:
-
             try:
                 obj = self._process_request(True)
             except Exception as e:
@@ -369,7 +410,7 @@ class DataHolder(object):
             yield obj
 
     def __iter__(self):
-        if not self._data_function_evaluated:
+        if self.needs_evaluating:
             for p in self._iter_pages():
                 for i in p._pages_queryset:
                     yield i
@@ -418,7 +459,7 @@ class DataHolder(object):
 
     def __repr__(self):
         if len(self._pages_queryset) > 1:
-            return '<%s Object: len %s' % (self._api.object_name, len(self._pages_queryset))
+            return '<%s Object: len %s>' % (self._api.object_name, len(self._pages_queryset))
         return '<%s Object>' % self._object_name
 
     def __len__(self):
@@ -439,6 +480,9 @@ class DataHolder(object):
 
     def __delitem__(self, key):
         return self.delete(key)
+
+    def __dict__(self):
+        return self._query
 
     @property
     def __class__(self):
@@ -473,6 +517,7 @@ class BlackCurveAPI(object):
         self.current_request = None
         self.all_data_attributes = ['all', 'page', 'find', 'pages']
         self.data_attributes = self.all_data_attributes
+        self.data_item_attributes = ['save', 'delete']
         self.response_data_name = 'data'
         self.endpoint = None
         self.params = {}
@@ -520,13 +565,13 @@ class BlackCurveAPI(object):
             self.access_token = response['token']
             return self.access_token
         else:
-            raise Exception('Bad Response getting Access Token %s' % response['error'])
+            raise APIException('Bad Response getting Access Token %s' % response['error'])
 
     def prices(self, columns=None, geography=None, changes_only=True, **kwargs):
         """
         :param columns: Optional: list of columns you want back
         :param geography: Optional: list of geographies you want back
-        :param changes_only: Optional: whether or not to only recieve prices that have changed
+        :param changes_only: Optional: whether or not to only receive prices that have changed
         :param kwargs: Optional: filter columns eg. brand=['nike', 'addidas']
         :return: Current Prices
         """
@@ -561,6 +606,7 @@ class BlackCurveAPI(object):
         self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources Info'
         self.data_attributes = ['all', 'find', 'delete', 'save']
+        self.data_item_attributes = []
         self.response_data_name = None
         endpoint = 'data_sources_info/'
         self._set_request_attributes(endpoint, 'GET')
@@ -578,7 +624,7 @@ class BlackCurveAPI(object):
         """
         self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources'
-        self.data_attributes = ['all', 'page', 'create', 'batch_create', 'pages']
+        self.data_attributes = ['all', 'page', 'create', 'batch_create', 'pages', 'find']
         self.response_data_name = 'data'
         endpoint = 'data_sources/%s' % source_name
         params = {}

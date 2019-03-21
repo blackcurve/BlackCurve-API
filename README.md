@@ -3,7 +3,7 @@
 <img alt='BlackCurve' src="https://blackcurve.io/api/docs/_images/blackcurve-logo.png" width="250">
 
 ## API Documentation  
-Documentation for the BlackCurve endpoints can be found [here](blackcurve.io/api/docs/index.html).  
+Documentation for the BlackCurve endpoints can be found [here](https://blackcurve.io/api/docs/index.html).  
 
 ## Requirements  
 * Python 2.7+
@@ -34,19 +34,20 @@ Get a list of current Prices
  ```python
 	# get all the prices
 	bc.prices().all()
-	# get a generator for each page of prices
-	prices = bc.prices().iterall()
-	page = 1
-	for x in prices :
-			print('Page %s of Prices: %s' % (page, x))
-			page += 1
+	
+	# get all prices
+	prices = bc.prices().all()
+	print('You have {} prices'.format(len(prices)))
 			
 	# get a price for a single product by id
-	bc.prices().find('42').all()
+	bc.prices().find('42')
+	
 	# filter specific product columns
 	bc.prices(columns=['Price', 'Product ID']).all()
+	
 	# filter geography
 	bc.prices(geography='UK').all()
+	
 	# filter by column value -- price >= 5
 	bc.prices(price_gte=5).all()
 	
@@ -74,8 +75,8 @@ Get a list of all of the data in a given source
 	sales_history = bc.data_sources().find('Sales History').all()
 	page = 1
 	for x in sales_history:
-			print('Page %s of Sales History: %s' % (page, x))
-			page += 1
+		print('Page %s of Sales History: %s' % (page, x))
+		page += 1
 ```
 
 
