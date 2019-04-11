@@ -1,2 +1,2 @@
-from blackcurve.blackcurve_api import *
+from blackcurve.api import *
 name = "blackcurve"

@@ -17,13 +17,13 @@ Documentation for the BlackCurve endpoints can be found [here](https://blackcurv
 ### Initiate a Connection
 You just need your subdomain and a access token to get started
  ```python
-	from blackcurve_api import BlackCurveAPI	
-	bc = BlackCurveAPI({{ your_subdomain }}, {{ access_token }})	
+	from blackcurve.api import BlackCurveAPI	
+	bc = BlackCurveAPI({{ subdomain }}, {{ access_token }})	
 ```
 ### Reload a Access Token
 Need a new access token, or just misplaced the old one?
  ```python
-	bc = BlackCurveAPI({{ your_subdomain }})
+	bc = BlackCurveAPI({{ subdomain }})
 	token = bc.get_access_token({{ client_key }}, {{ client_secret }})
 	print(token)	
 ```
@@ -79,6 +79,17 @@ Get a list of all of the data in a given source
 		page += 1
 ```
 
+### Geographies & Currencies
+Get a list of associated data for Geographies and Currencies
+```python
+    # get a list of all of the geography data
+    bc.geographies().all()
+    # get a specific geography
+    bc.geographies('Website UK').all()
+    # get a list of all currencies
+    bc.currencies().all()
+    
+```
 
 
 

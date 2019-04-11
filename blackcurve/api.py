@@ -81,8 +81,9 @@ class DataHolder(object):
         :return: decoded response
         """
         resp = json.loads(response)
-        if 'error' in resp.keys():
-            raise APIException(resp['error'])
+        if not isinstance(resp, list):
+            if 'error' in resp.keys():
+                raise APIException(resp['error'])
         return resp
 
     def _build_request_params(self, method=None, data=None):
@@ -635,5 +636,38 @@ class BlackCurveAPI(object):
                 params[k] = v
 
         self._set_request_attributes(endpoint, 'GET', params)
+        self._endpoint_called = True
+        return self
+
+    def geographies(self, geography_name=None):
+        """
+        Gets a list of Geographies (or a single geography if name is specified) and associated data
+        :param geography_name: Name of the geography (Optional)
+        :return: Geography Data
+        """
+        self._data_holder = DataHolder(self)
+        self.object_name = 'Geographies'
+        self.data_attributes = ['all']
+        self.response_data_name = 'data'
+        endpoint = 'geographies/'
+        if geography_name is not None:
+            endpoint += geography_name
+
+        self._set_request_attributes(endpoint, 'GET')
+        self._endpoint_called = True
+        return self
+
+    def currencies(self):
+        """
+        Gets a list of Currencies and associated data
+        :return: Currency Data
+        """
+        self._data_holder = DataHolder(self)
+        self.object_name = 'Currencies'
+        self.data_attributes = ['all']
+        self.response_data_name = 'data'
+        endpoint = 'currencies/'
+
+        self._set_request_attributes(endpoint, 'GET')
         self._endpoint_called = True
         return self
