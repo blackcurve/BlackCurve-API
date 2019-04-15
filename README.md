@@ -1,17 +1,16 @@
 
 # BlackCurve Python API Library 
-<img alt='BlackCurve' src="https://blackcurve.io/api/docs/_images/blackcurve-logo.png" width="250">
+<img alt='BlackCurve' src="https://i.ibb.co/T27MkzL/bc.png" width="250">
 
 ## API Documentation  
-Documentation for the BlackCurve endpoints can be found [here](https://blackcurve.io/api/docs/index.html).  
+Documentation for the BlackCurve endpoints can be found [here](https://blackcurve.io/api/docs).  
 
 ## Requirements  
 * Python 2.7+
 * [Requests](http://docs.python-requests.org/en/master/) HTTP library for python v2.0 or above.  
   
 ## Installation
-> `$ pip install requests`  
-> `$ pip install blackcurve_api`
+> `$ pip install blackcurve`
 
 ## Basic Usage
 ### Initiate a Connection
@@ -39,8 +38,8 @@ Get a list of current Prices
 	prices = bc.prices().all()
 	print('You have {} prices'.format(len(prices)))
 			
-	# get a price for a single product by id
-	bc.prices().find('42')
+	# get a price for a single product by Product ID
+	bc.prices().find('UK42')
 	
 	# filter specific product columns
 	bc.prices(columns=['Price', 'Product ID']).all()
@@ -57,37 +56,54 @@ Get a list of current Prices
 Get column and data type information about your data sources
  ```python
 	# get all the data sources
-	bc.data_sources_info().all()
+	data_sources = bc.data_sources_info().all()
+	print(data_sources)
+	
 	# get a single data source
-	bc.data_sources_info().find('Sales History').all()
+	sales_history = bc.data_sources_info().find('Sales History')
+	print(sales_history)
+	
+	# create a new column 
+	sales_history['New Order Column'] = 'Integer'
+	sales_history.save()
+	
+	# delete a column
+	del sales_history['New Order Column']
+	sales_history.save()
+	
 ```
 ### Data Sources
 Get a list of all of the data in a given source
  ```python
 	# get all of the data from sales history
-	bc.data_sources().find('Sales History').all()
-	# get just the volume and product id columns in sales history
-	bc.data_sources(columns=['Volume', 'Product ID']).find('Sales History').all()
-	# filter by column value -- price >= 5
-	bc.data_sources(price_gte=5).find('Sales History').all()
+	bc.data_sources('Sales History').all()
 	
-	# get a generator for all the pages returned in sales history
-	sales_history = bc.data_sources().find('Sales History').all()
+	# get just the volume and product id columns in sales history
+	bc.data_sources('Sales History', columns=['Volume', 'Product ID']).all()
+	
+	# filter by column value -- price >= 5
+	bc.data_sources('Sales History', price_gte=5).all()
+	
+	# get a generator for all the pages returned in sales history (lazy requests)
+	sales_history = bc.data_sources('Sales History').all()
 	page = 1
 	for x in sales_history:
 		print('Page %s of Sales History: %s' % (page, x))
 		page += 1
+		
 ```
 
 ### Geographies & Currencies
 Get a list of associated data for Geographies and Currencies
 ```python
     # get a list of all of the geography data
-    bc.geographies().all()
+    all_geographies = bc.geographies().all()
+    
     # get a specific geography
-    bc.geographies('Website UK').all()
+    website_uk = bc.geographies('Website UK').all()
+    
     # get a list of all currencies
-    bc.currencies().all()
+    all_currencies = bc.currencies().all()
     
 ```
 

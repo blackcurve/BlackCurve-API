@@ -98,7 +98,7 @@ class DataHolder(object):
         url = self._api.domain + self._api.endpoint
         # get the pk if there is one
         if self._pk is not None:
-            if self._api.endpoint == 'prices/':
+            if self._api.endpoint in ('prices/', 'data_sources_info/'):
                 url += str(self._pk)
             else:
                 url += '?id=' + str(self._pk)
@@ -233,11 +233,9 @@ class DataHolder(object):
         :return: self
         """
         if attribute:
-            try:
-                item = getattr(self, attribute)
-            except AttributeError:
-                item = getattr(self, attribute.replace(' ', '_').lower().strip())
-            data = {attribute: item}
+            data = attribute
+            if isinstance(attribute, str):
+                data = [attribute]
         else:
             data = self._get_deleted_attributes()
         params = self._build_request_params('DELETE', json.dumps(data))
@@ -291,22 +289,28 @@ class DataHolder(object):
             self._set_changed_attributes()
         if self._update_query:
             data = self._update_query
-            try:
-                data['Product ID'] = self._query['product id']
-            except KeyError:
+            if self._api.endpoint != 'data_sources_info/':
                 try:
-                    data['system id'] = self._query['system id']
+                    data['Product ID'] = self._query['product id']
                 except KeyError:
-                    data['id'] = self._query['id']
+                    try:
+                        data['system id'] = self._query['system id']
+                    except KeyError:
+                        data['id'] = self._query['id']
             params = self._build_request_params('POST', json.dumps(data))
             self._get_response(params)
+
+        # See if there are any deleted attributes
+        deleted = self._get_deleted_attributes()
+        if deleted and self._api.endpoint == 'data_sources_info/':
+            self.delete(list(deleted.keys()))
         return self
 
     def _set_changed_attributes(self):
         """
         Find all of the objects attributes that have changes (for updates)
         """
-        class_attrs = {x: getattr(self, x, None) for x in dir(self) if not x.startswith('_')}
+        class_attrs = {x: object.__getattribute__(self, x) for x in dir(self) if not x.startswith('_')}
         class_attrs = {k: v for k, v in class_attrs.items() if not callable(v)}
         class_attrs = {k: v for k, v in class_attrs.items() if v is not None}
         cased_class_attrs = {self._attribute_map[k] if k in self._attribute_map.keys() else k: v for k, v in
@@ -324,7 +328,7 @@ class DataHolder(object):
         """
         class_attrs = {x: getattr(self, x, None) for x in dir(self) if not x.startswith('_')}
         class_attrs = {k: v for k, v in class_attrs.items() if not callable(v)}
-        return {k: v for k, v in self._query.items() if k not in class_attrs.keys()}
+        return {k: v for k, v in self._query.items() if k.lower().replace(' ', '_').strip() not in class_attrs.keys()}
 
     @staticmethod
     def _set_class_attribute(cls, key, value):
@@ -361,7 +365,7 @@ class DataHolder(object):
         return False
 
     @property
-    def needs_evaluating(self):
+    def _needs_evaluating(self):
         """
         Does the object need evaluating (API request)
         :return: Boolean
@@ -414,7 +418,7 @@ class DataHolder(object):
             yield obj
 
     def __iter__(self):
-        if self.needs_evaluating:
+        if self._needs_evaluating:
             for p in self._iter_pages():
                 for i in p._pages_queryset:
                     yield i
@@ -427,11 +431,13 @@ class DataHolder(object):
                     yield k, v
 
     def __getattribute__(self, item):
+        if isinstance(item, str):
+            item = item.lower().replace(' ', '_').strip()
         if callable(object.__getattribute__(self, item)) and '_' not in item:
             if item not in self._api.data_attributes:
                 raise AttributeError('%s method not allowed' % item)
-            if item in self._api.data_attributes and True in self._data_function_called_dict.values():
-                raise AttributeError('%s method not allowed' % item)
+            # if item in self._api.data_attributes and True in self._data_function_called_dict.values():
+            #     raise AttributeError('%s method not allowed' % item)
         return object.__getattribute__(self, item)
 
     def __getitem__(self, item):
@@ -459,11 +465,11 @@ class DataHolder(object):
 
     def __setitem__(self, key, value):
         if hasattr(self, key):
-            setattr(self, key, value)
+            object.__setattr__(self, key, value)
         elif hasattr(self, key.replace(' ', '_').lower().strip()):
-            setattr(self, key.replace(' ', '_').lower().strip(), value)
+            object.__setattr__(self, key.replace(' ', '_').lower().strip(), value)
         else:
-            setattr(self, key, value)
+            object.__setattr__(self, key, value)
 
     def __repr__(self):
         if len(self._pages_queryset) > 1:
@@ -483,25 +489,30 @@ class DataHolder(object):
         else:
             return self.__repr__()
 
+    def _delete_attribute(self, item):
+        return object.__delattr__(self, item)
+
     def __delattr__(self, item):
-        return self.delete(item)
+        attr = []
+        try:
+            object.__getattribute__(self, item)
+            attr.append(item)
+        except AttributeError:
+            pass
+        try:
+            object.__getattribute__(self, item.lower().replace(' ', '_').strip())
+            attr.append(item.lower().replace(' ', '_').strip())
+        except AttributeError:
+            pass
+
+        if attr:
+            for i in attr:
+                self._delete_attribute(i)
+        else:
+            raise AttributeError('Object has not attribute %s' % item)
 
     def __delitem__(self, key):
-        return self.delete(key)
-
-    def __dict__(self):
-        print('dict calles \n ')
-        print(self._query)
-        return self._query
-
-    @property
-    def __class__(self):
-        for _ in self:
-            pass
-        if self._query:
-            return dict
-        else:
-            return list
+        return self.__delattr__(key)
 
     def keys(self):
         return self._query.keys()
@@ -615,8 +626,8 @@ class BlackCurveAPI(object):
         """
         self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources Info'
-        self.data_attributes = ['all', 'find', 'delete', 'save']
-        self.data_item_attributes = []
+        self.data_attributes = ['all', 'find', 'delete', 'save', 'create']
+        # self.data_item_attributes = []
         self.response_data_name = None
         endpoint = 'data_sources_info/'
         self._set_request_attributes(endpoint, 'GET')
