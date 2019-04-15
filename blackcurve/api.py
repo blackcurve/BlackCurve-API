@@ -98,7 +98,10 @@ class DataHolder(object):
         url = self._api.domain + self._api.endpoint
         # get the pk if there is one
         if self._pk is not None:
-            url += '?id=' + str(self._pk)
+            if self._api.endpoint == 'prices/':
+                url += str(self._pk)
+            else:
+                url += '?id=' + str(self._pk)
         # get the page number
         if self._page_no > 1:
             self._api.params['page'] = self._page_no
@@ -445,6 +448,10 @@ class DataHolder(object):
                 idx = object_names.index(item)
             except ValueError:
                 try:
+                    # escape the variables
+                    query_keys = {k.replace(' ', '_').lower().strip(): k for k, v in self._query.items()}
+                    if item.replace(' ', '_').lower().strip() in query_keys.keys():
+                        return self._query[query_keys[item.replace(' ', '_').lower().strip()]]
                     return self._query[item]
                 except ValueError:
                     return self._pages_queryset[item]
@@ -483,6 +490,8 @@ class DataHolder(object):
         return self.delete(key)
 
     def __dict__(self):
+        print('dict calles \n ')
+        print(self._query)
         return self._query
 
     @property
@@ -593,7 +602,7 @@ class BlackCurveAPI(object):
         if not changes_only:
             params['changes_only'] = changes_only
         if kwargs is not None:
-            for k, v in kwargs:
+            for k, v in kwargs.items():
                 params[k] = v
 
         self._set_request_attributes(endpoint, 'GET', params)
