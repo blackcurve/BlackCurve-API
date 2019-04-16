@@ -2,6 +2,7 @@ import requests
 import json
 import sys
 import collections
+import datetime
 
 # Python 2 & 3 compatible url-encoding
 if sys.version_info >= (3, 0):
@@ -74,6 +75,33 @@ class DataHolder(object):
         self._object_name = self._api.object_name
 
     @staticmethod
+    def build_json(data, recursion=False):
+        """
+        Builds a JSON string from a dictionary / list
+        :param data: Dict / List
+        :param recursion: Boolean if it is a recursive call or not
+        :return: JSON String
+        """
+        list_output = list()
+        dict_output = dict()
+
+        if isinstance(data, list):
+            for i in data:
+                list_output.append(DataHolder.build_json(i, True))
+            return list_output if recursion else json.dumps(list_output)
+        elif isinstance(data, dict):
+            for k, v in data.items():
+                dict_output[k] = DataHolder.build_json(v, True)
+            return dict_output if recursion else json.dumps(dict_output)
+        else:
+            if isinstance(data, datetime.datetime):
+                return data.strftime("%Y-%m-%d %H:%M:%S")
+            if isinstance(data, datetime.date):
+                return data.strftime("%Y-%m-%d")
+            else:
+                return data
+
+    @staticmethod
     def _parse_response(response):
         """
         decode the response and check for errors
@@ -137,7 +165,7 @@ class DataHolder(object):
         :return: self
         """
         data = self._get_response(self._build_request_params())
-        self._no_pages = data.pop('no_pages', None)
+        self._no_pages = dict(data).pop('no_pages', None)
         inst = DataHolder(self._api)
         if self._api.response_data_name is not None:
             data = data[self._api.response_data_name]
@@ -145,7 +173,6 @@ class DataHolder(object):
         if isinstance(data, list):
             for i in data:
                 d_obj = DataHolder(self._api)
-                d_obj._api.data_attributes = self._api.data_item_attributes
                 d_obj._request = self._api.current_request
                 d_obj._object_name = self._api.object_name
                 for key, val in i.items():
@@ -159,7 +186,6 @@ class DataHolder(object):
             for k, v in data.items():
                 d_obj = DataHolder(self._api)
                 d_obj._request = self._api.current_request
-                d_obj._api.data_attributes = self._api.data_item_attributes
                 d_obj._object_name = k
                 d_obj._data_source = k
                 for key, val in v.items():
@@ -291,13 +317,16 @@ class DataHolder(object):
             data = self._update_query
             if self._api.endpoint != 'data_sources_info/':
                 try:
-                    data['Product ID'] = self._query['product id']
+                    data['id'] = self._query['id']
                 except KeyError:
                     try:
                         data['system id'] = self._query['system id']
                     except KeyError:
-                        data['id'] = self._query['id']
-            params = self._build_request_params('POST', json.dumps(data))
+                        try:
+                            data['Product ID'] = self._query['product id']
+                        except KeyError:
+                            pass
+            params = self._build_request_params('POST', self.build_json(data))
             self._get_response(params)
 
         # See if there are any deleted attributes
@@ -441,13 +470,16 @@ class DataHolder(object):
         return object.__getattribute__(self, item)
 
     def __getitem__(self, item):
+        # evaluate the generator
+        collections.deque(self.__iter__(), maxlen=0)
         if isinstance(item, int):
             if self._pages_queryset:
                 return self._pages_queryset[item]
             else:
                 if self._data_function_evaluated_dict['all']:
                     return list(self)[0]
-                raise ValueError
+                print(self._pages_queryset)
+                raise ValueError('Object is not Indexable')
         else:
             object_names = [x._object_name for x in self._pages_queryset]
             try:
@@ -472,7 +504,7 @@ class DataHolder(object):
             object.__setattr__(self, key, value)
 
     def __repr__(self):
-        if len(self._pages_queryset) > 1:
+        if len(self._pages_queryset) > 0:
             return '<%s Object: len %s>' % (self._api.object_name, len(self._pages_queryset))
         return '<%s Object>' % self._object_name
 
@@ -484,6 +516,8 @@ class DataHolder(object):
         return len(self._pages_queryset)
 
     def __str__(self):
+        # evaluate the generator
+        collections.deque(self.__iter__(), maxlen=0)
         if self._query:
             return str(self._query)
         else:
@@ -538,7 +572,6 @@ class BlackCurveAPI(object):
         self.current_request = None
         self.all_data_attributes = ['all', 'page', 'find', 'pages']
         self.data_attributes = self.all_data_attributes
-        self.data_item_attributes = ['save', 'delete']
         self.response_data_name = 'data'
         self.endpoint = None
         self.params = {}
@@ -574,7 +607,7 @@ class BlackCurveAPI(object):
         :param client_key: Your client key
         :param client_secret: Your client secret
         """
-        url = self.domain + 'token'
+        url = self.domain + 'token/'
         payload = "CLIENT_KEY=%s&CLIENT_SECRET=%s" % (client_key, client_secret)
         headers = {
             'Content-Type': "application/x-www-form-urlencoded",
@@ -627,7 +660,6 @@ class BlackCurveAPI(object):
         self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources Info'
         self.data_attributes = ['all', 'find', 'delete', 'save', 'create']
-        # self.data_item_attributes = []
         self.response_data_name = None
         endpoint = 'data_sources_info/'
         self._set_request_attributes(endpoint, 'GET')
@@ -645,7 +677,7 @@ class BlackCurveAPI(object):
         """
         self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources'
-        self.data_attributes = ['all', 'page', 'create', 'batch_create', 'pages', 'find']
+        self.data_attributes = ['all', 'page', 'create', 'batch_create', 'pages', 'find', 'save']
         self.response_data_name = 'data'
         endpoint = 'data_sources/%s' % source_name
         params = {}
@@ -691,3 +723,9 @@ class BlackCurveAPI(object):
         self._set_request_attributes(endpoint, 'GET')
         self._endpoint_called = True
         return self
+
+    def __repr__(self):
+        return '<%s Object>' % self.object_name
+
+    def __str__(self):
+        return self.__repr__()

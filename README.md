@@ -91,6 +91,38 @@ Get a list of all of the data in a given source
 		print('Page %s of Sales History: %s' % (page, x))
 		page += 1
 		
+	# get a Transactions system id
+	sales_history = bc.data_sources('Sales History').all()
+	first_sale = sales_history[0]
+	first_sale_id = first_sale.id
+	
+	# find a transaction by a system id
+	first_sale = bc.data_sources('Sales History').find(first_sale_id)
+	
+	# edit a column on a transaction
+	first_sale['Price'] = 42.00
+	first_sale.save()
+	
+	# create a new transaction
+	sales_history = bc.data_sources('Sales History')
+    sales_history.create({
+        'Product ID': 'UK54321',
+        'Profit': 7.77,
+        'Revenue': 6.66,
+        'Volume': 1,
+        'Price': 3.33,
+        'Transaction Date': datetime.date.today()
+    })
+	
+	# get all transactions for a given product id
+	transactions = bc.data_sources('Sales History', product_id='UK54321').all()
+	print('There are {} transactions for product - UK54321'.format(len(transactions)))
+	
+	# change the price of a product [must use the kwarg product_id as .find() is only for system id] 
+	product = bc.data_sources('Product Inventory', product_id='UK54321').all()[0]
+	product['Price'] = 55.99
+	product.save()
+		
 ```
 
 ### Geographies & Currencies
