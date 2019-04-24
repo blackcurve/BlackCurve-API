@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="blackcurve",
-    version="0.2.1",
+    version="0.2.2",
     author="BlackCurve LTD.",
     author_email="george.rowberry@blackcurve.com",
     description="An easy to use python interface for BlackCurve's API",

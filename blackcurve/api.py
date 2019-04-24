@@ -583,7 +583,7 @@ class BlackCurveAPI(object):
         self._endpoint_called = False
 
     def __getattr__(self, name):
-        if name in self.data_attributes:
+        if name in object.__getattribute__(self, 'data_attributes'):
             if not self._endpoint_called:
                 raise AttributeError('You need to call an endpoint before a data function, e.g. inst.prices().all()')
             return getattr(self._data_holder, name)
