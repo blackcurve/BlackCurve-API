@@ -126,7 +126,7 @@ class DataHolder(object):
         url = self._api.domain + self._api.endpoint
         # get the pk if there is one
         if self._pk is not None:
-            if self._api.endpoint in ('prices/', 'data_sources_info/'):
+            if self._api.endpoint in ('prices/', 'data_sources_info/', 'currencies/'):
                 url += str(self._pk)
             else:
                 url += '?id=' + str(self._pk)
@@ -258,12 +258,22 @@ class DataHolder(object):
         :param attribute: Optional: for deleting a single value
         :return: self
         """
-        if attribute:
-            data = attribute
-            if isinstance(attribute, str):
-                data = [attribute]
+        data = None
+        
+        if 'data_sources/' in self._api.endpoint:
+            if self._query:
+                self._api.params['id'] = self._query['id']
+            else:
+                raise APIException('Need a single item to delete')
+        
         else:
-            data = self._get_deleted_attributes()
+            if attribute:
+                data = attribute
+                if isinstance(attribute, str):
+                    data = [attribute]
+            else:
+                data = self._get_deleted_attributes()
+                
         params = self._build_request_params('DELETE', json.dumps(data))
         self._get_response(params)
         return self
@@ -300,8 +310,14 @@ class DataHolder(object):
         :param object_list: list of objects to be created
         :return: self
         """
-        for i in object_list:
-            self.create(**i)
+        if 'data_sources/' in self._api.endpoint:
+            params = self._build_request_params('POST', json.dumps(object_list))
+            self._get_response(params)
+            
+        else:
+            for i in object_list:
+                self.create(**i)
+                
         return self
 
     @data_func_called_dec()
@@ -316,6 +332,10 @@ class DataHolder(object):
         if self._update_query:
             data = self._update_query
             if self._api.endpoint != 'data_sources_info/':
+                
+                if self._api.endpoint == 'currencies/':
+                    self._pk = self._query['code']
+                    
                 try:
                     data['id'] = self._query['id']
                 except KeyError:
@@ -677,7 +697,7 @@ class BlackCurveAPI(object):
         """
         self._data_holder = DataHolder(self)
         self.object_name = 'Data Sources'
-        self.data_attributes = ['all', 'page', 'create', 'batch_create', 'pages', 'find', 'save']
+        self.data_attributes = ['all', 'page', 'create', 'batch_create', 'pages', 'find', 'save', 'delete']
         self.response_data_name = 'data'
         endpoint = 'data_sources/%s' % source_name
         params = {}
@@ -716,7 +736,7 @@ class BlackCurveAPI(object):
         """
         self._data_holder = DataHolder(self)
         self.object_name = 'Currencies'
-        self.data_attributes = ['all']
+        self.data_attributes = ['all', 'save']
         self.response_data_name = 'data'
         endpoint = 'currencies/'
 
