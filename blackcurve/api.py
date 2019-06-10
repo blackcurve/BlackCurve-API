@@ -158,6 +158,15 @@ class DataHolder(object):
         """
         return self._parse_response(requests.request(**params).text)
 
+    def set_child_as_evaluated(self, child):
+        """
+        Sets a child object to evaluated
+        :param child: DataHolder obj
+        """
+        for k, v in self._data_function_called_dict.items():
+            if v:
+                child._data_function_evaluated_dict[k] = True
+
     def _process_request(self, new_instance=False):
         """
         Update this object with the data
@@ -175,6 +184,7 @@ class DataHolder(object):
                 d_obj = DataHolder(self._api)
                 d_obj._request = self._api.current_request
                 d_obj._object_name = self._api.object_name
+                self.set_child_as_evaluated(d_obj)
                 for key, val in i.items():
                     d_obj._query[key] = val
                     self._set_class_attribute(d_obj, key, val)
@@ -188,6 +198,7 @@ class DataHolder(object):
                 d_obj._request = self._api.current_request
                 d_obj._object_name = k
                 d_obj._data_source = k
+                self.set_child_as_evaluated(d_obj)
                 for key, val in v.items():
                     d_obj._query[key] = val
                     self._set_class_attribute(d_obj, key, val)
@@ -498,7 +509,6 @@ class DataHolder(object):
             else:
                 if self._data_function_evaluated_dict['all']:
                     return list(self)[0]
-                print(self._pages_queryset)
                 raise ValueError('Object is not Indexable')
         else:
             object_names = [x._object_name for x in self._pages_queryset]
